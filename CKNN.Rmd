@@ -1,0 +1,183 @@
+---
+title: "CKNN"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(forcats)
+library(jsonlite)
+library(assessr)
+library(tidyverse)
+library(ccao)
+```
+
+
+
+```{r}
+full <- read_csv("C:/Users/Deepa/Desktop/Fall21/Consulting/dataclean.csv")
+
+full$HALF_BATH_CT[is.na(full$HALF_BATH_CT)] <- 0
+full$FULL_BATH_CT[is.na(full$FULL_BATH_CT)] <- 0
+
+
+
+sales <- full %>% filter(!is.na(full$SALE_PRICE))
+properties <- full %>% filter(is.na(full$SALE_PRICE))
+
+
+
+
+sales$HALF_BATH_RATING <- sales$HALF_BATH_RATING %>% replace_na("NN - None")
+properties$HALF_BATH_RATING <- properties$HALF_BATH_RATING %>% replace_na("NN - None")
+
+sales$FULL_BATH_RATING <- sales$FULL_BATH_RATING %>% replace_na("NN - None")
+properties$FULL_BATH_RATING <- properties$FULL_BATH_RATING %>% replace_na("NN - None")
+
+sales$KITCHEN_RATING <- sales$KITCHEN_RATING %>% replace_na("NN - None")
+properties$KITCHEN_RATING <- properties$KITCHEN_RATING %>% replace_na("NN - None")
+
+full$HALF_BATH_CT[is.na(full$HALF_BATH_CT)] <- 0
+full$FULL_BATH_CT[is.na(full$FULL_BATH_CT)] <- 0
+
+properties$HALF_BATH_CT <- properties$HALF_BATH_CT %>% replace_na(0)
+properties$FULL_BATH_CT <- properties$FULL_BATH_CT %>% replace_na(0)
+
+
+properties %>% drop_na()
+properties <- properties[!is.na(properties$FINISHED_AREA),]
+properties <- properties[!is.na(properties$GEO_TRACT),]
+properties <- properties[!is.na(properties$COND),]
+properties <- properties[!is.na(properties$QUAL),]
+```
+
+```{r}
+sales <- sales[-c( 3, 16, 17, 18, 19, 20, 21)]
+properties <- properties[-c( 3, 16, 17, 18, 19, 20, 21)]
+```
+
+```{r}
+summary(sales)
+```
+
+
+```{r}
+sales_prepped <- sales %>%
+  
+  # Keep only the variables used for clustering (except sale price, which is
+  # removed later)
+  
+  select(
+    BLD_TYPE, NBHD, QUAL, COND, KITCHEN_RATING, FULL_BATH_RATING, HALF_BATH_RATING, ZIP, GEO_TRACT,
+    KITCHEN_CT, FULL_BATH_CT, HALF_BATH_CT, YEAR_BUILT, FINISHED_AREA, LAND_SF, LNG, LAT, PROP_ID
+  ) %>%
+  
+  # Convert categorical variables to factor and numbers to numeric
+  
+  mutate(
+    across(c(BLD_TYPE, NBHD, QUAL, COND, KITCHEN_RATING, FULL_BATH_RATING, HALF_BATH_RATING, ZIP, GEO_TRACT), as.factor),
+    across(c(KITCHEN_CT, FULL_BATH_CT, HALF_BATH_CT, YEAR_BUILT, FINISHED_AREA, LAND_SF, LNG, LAT), as.numeric))  %>%
+  
+  
+  mutate(across(where(is.factor), fct_explicit_na)) %>%
+  # Convert lat/lon to planar projection. In the case of Illinois, 3435 is ideal
+  # This code converts to the new coordinate system, but immediately removes the
+  # resulting geometry column (only the coordinates are needed)
+  st_as_sf(coords = c("LNG", "LAT"), crs = 4326) %>%
+  st_transform(2288) %>%
+  mutate(lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2]) %>%
+  
+  st_set_geometry(NULL)
+
+```
+
+```{r}
+prop_prepped <- properties %>%
+  
+  # Keep only the variables used for clustering (except sale price, which is
+  # removed later)
+  
+  select(
+    BLD_TYPE, NBHD, QUAL, COND, KITCHEN_RATING, FULL_BATH_RATING, HALF_BATH_RATING, ZIP, GEO_TRACT,
+    KITCHEN_CT, FULL_BATH_CT, HALF_BATH_CT, YEAR_BUILT, FINISHED_AREA, LAND_SF, LNG, LAT, PROP_ID
+  ) %>%
+  
+  # Convert categorical variables to factor and numbers to numeric
+  
+  mutate(
+    across(c(BLD_TYPE, NBHD, QUAL, COND, KITCHEN_RATING, FULL_BATH_RATING, HALF_BATH_RATING, ZIP, GEO_TRACT), as.factor),
+    across(c(KITCHEN_CT, FULL_BATH_CT, HALF_BATH_CT, YEAR_BUILT, FINISHED_AREA, LAND_SF, LNG, LAT), as.numeric))  %>%
+  
+  
+  mutate(across(where(is.factor), fct_explicit_na)) %>%
+  # Convert lat/lon to planar projection. In the case of Illinois, 3435 is ideal
+  # This code converts to the new coordinate system, but immediately removes the
+  # resulting geometry column (only the coordinates are needed)
+  st_as_sf(coords = c("LNG", "LAT"), crs = 4326) %>%
+  st_transform(2288) %>%
+  mutate(lon = st_coordinates(.)[, 1], lat = st_coordinates(.)[, 2]) %>%
+  
+  st_set_geometry(NULL)
+
+```
+
+```{r}
+sales <- sales_prepped[-c(16,17)]
+
+lon <- sales_prepped[c(16)]
+lon <- unlist(lon)
+
+lat <- sales_prepped[c(17)]
+lat <- unlist(lat)
+
+```
+
+```{r}
+prop <- prop_prepped[-c(16,17)]
+
+lon1 <- prop_prepped[c(16)]
+lon1 <- unlist(lon1)
+
+lat1 <- prop_prepped[c(17)]
+lat1 <- unlist(lat1)
+
+weights <- c("BLD_TYPE" = 8, "NBHD" = 4, "GEO_TRACT" = 2)
+sales_prepped <- sales_prepped[, c(16, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18)]
+```
+
+```{r}
+knn <- cknn(
+    sales_prepped[, -c(16,17,18)],
+    lon,
+    lat,
+    m = 5,
+    k = 5,
+    l = 0.5,
+    var_weights = weights,
+    keep_data = TRUE,
+  )
+```
+
+```{r}
+knn$knn[1]
+```
+
+
+```{r}
+sales_prepped[1,] 
+```
+
+```{r}
+sales_prepped[8512, ]
+```
+
+
+
+
+
+
+
+
+
