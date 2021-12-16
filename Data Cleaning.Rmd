@@ -1,0 +1,84 @@
+---
+title: "Data Cleaning"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(sf)
+library(forcats)
+library(jsonlite)
+library(assessr)
+library(tidyverse)
+library(ccao)
+library(sf)
+```
+
+
+```{r}
+full <- read_csv("dataclean.csv")
+
+full$half_bath_ct[is.na(full$half_bath_ct)] <- 0
+full$full_bath_ct[is.na(full$full_bath_ct)] <- 0
+
+
+sales <- full %>% filter(!is.na(full$sale_price))
+properties <- full %>% filter(is.na(full$sale_price))
+
+
+sales$half_bath_rating <- sales$half_bath_rating %>% replace_na("NN - None")
+properties$half_bath_rating <- properties$half_bath_rating %>% replace_na("NN - None")
+
+sales$full_bath_rating <- sales$full_bath_rating %>% replace_na("NN - None")
+properties$full_bath_rating <- properties$full_bath_rating %>% replace_na("NN - None")
+
+sales$kitchen_rating <- sales$kitchen_rating %>% replace_na("NN - None")
+properties$kitchen_rating <- properties$kitchen_rating %>% replace_na("NN - None")
+
+full$half_bath_ct[is.na(full$half_bath_ct)] <- 0
+full$full_bath_ct[is.na(full$full_bath_ct)] <- 0
+
+properties$half_bath_ct <- properties$half_bath_ct %>% replace_na(0)
+properties$full_bath_ct <- properties$full_bath_ct %>% replace_na(0)
+
+properties %>% drop_na()
+properties <- properties[!is.na(properties$finished_area),]
+properties <- properties[!is.na(properties$geo_tract),]
+properties <- properties[!is.na(properties$cond),]
+properties <- properties[!is.na(properties$qual),]
+
+#create new column "appealed"
+full$appealed19[is.na(full$appealed19)] <- 0
+full$appealed20[is.na(full$appealed20)] <- 0
+full$appealed21[is.na(full$appealed21)] <- 0
+full$appealed <- ifelse((full$appealed19 + full$appealed20 + full$appealed21) > 0,
+                        1, 0)
+```
+
+
+```{r}
+#convert quality to numeric scores
+qual <- read.csv("qual.csv") #csv file containing two columns: qual and its corresponding quality score
+
+lookup <- unique(qual)
+base1 <- (merge(lookup, full, by = 'qual'))
+
+kitchen_rating <- read.csv("kitchen_rating.csv")
+lookup <- unique(kitchen_rating)
+base2 <- (merge(lookup, base1, by = 'kitchen_rating'))
+
+fb_rating <- read.csv("full_bath_rating.csv")
+lookup <- unique(fb_rating)
+base3 <- (merge(lookup, base2, by = 'full_bath_rating'))
+
+hb_rating <- read.csv("half_bath_rating.csv")
+lookup <- unique(hb_rating)
+base4 <- (merge(lookup, base3, by = 'half_bath_rating'))
+
+condition <- read.csv("condition.csv")
+lookup <- unique(condition)
+final <- (merge(lookup, base4, by = 'cond'))
+
+write_csv(final, file = "/Users/LOUIS JANE/Desktop/MS Applied Statistics/STAT488 - Consulting/final.csv")
+```

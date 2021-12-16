@@ -1,0 +1,10 @@
+kitchen_rating,k_rating
+UN - Unsound,1
+VP - Very Poor,2
+PR - Poor,3
+FR - Fair,4
+AV - Average,5
+GD - Good,6
+VG - Very Good,7
+EX - Excellent,8
+NA,0
