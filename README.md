@@ -1,2 +1,2 @@
-# consulting project
-# city of Milwaukee Assessors Office
+# Consulting project
+# City of Milwaukee Assessors Office
